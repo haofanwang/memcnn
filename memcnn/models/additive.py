@@ -50,7 +50,7 @@ class AdditiveCoupling(nn.Module):
             warnings.warn("Other implementations than the default (-1) are now deprecated.",
                           DeprecationWarning)
 
-    def forward(self, x):
+    def forward(self, x, edge_index, edge_attr):
         args = [x, self.Fm, self.Gm] + [w for w in self.Fm.parameters()] + [w for w in self.Gm.parameters()]
 
         if self.implementation_fwd == 0:
@@ -60,9 +60,9 @@ class AdditiveCoupling(nn.Module):
         elif self.implementation_fwd == -1:
             x1, x2 = torch.chunk(x, 2, dim=self.split_dim)
             x1, x2 = x1.contiguous(), x2.contiguous()
-            fmd = self.Fm.forward(x2)
+            fmd = self.Fm.forward(x2, edge_index, edge_attr)
             y1 = x1 + fmd
-            gmd = self.Gm.forward(y1)
+            gmd = self.Gm.forward(y1, edge_index, edge_attr)
             y2 = x2 + gmd
             out = torch.cat([y1, y2], dim=self.split_dim)
         else:
@@ -70,7 +70,7 @@ class AdditiveCoupling(nn.Module):
                                       .format(self.implementation_fwd))
         return out
 
-    def inverse(self, y):
+    def inverse(self, y, edge_index, edge_attr):
         args = [y, self.Fm, self.Gm] + [w for w in self.Fm.parameters()] + [w for w in self.Gm.parameters()]
 
         if self.implementation_bwd == 0:
@@ -80,24 +80,15 @@ class AdditiveCoupling(nn.Module):
         elif self.implementation_bwd == -1:
             y1, y2 = torch.chunk(y, 2, dim=self.split_dim)
             y1, y2 = y1.contiguous(), y2.contiguous()
-            gmd = self.Gm.forward(y1)
+            gmd = self.Gm.forward(y1, edge_index, edge_attr)
             x2 = y2 - gmd
-            fmd = self.Fm.forward(x2)
+            fmd = self.Fm.forward(x2, edge_index, edge_attr)
             x1 = y1 - fmd
             x = torch.cat([x1, x2], dim=self.split_dim)
         else:
             raise NotImplementedError("Inverse for selected implementation ({}) not implemented..."
                                       .format(self.implementation_bwd))
         return x
-
-
-class AdditiveBlock(AdditiveCoupling):
-    def __init__(self, Fm, Gm=None, implementation_fwd=1, implementation_bwd=1):
-        warnings.warn("This class has been deprecated. Use the AdditiveCoupling class instead.",
-                      DeprecationWarning)
-        super(AdditiveBlock, self).__init__(Fm=Fm, Gm=Gm,
-                                            implementation_fwd=implementation_fwd,
-                                            implementation_bwd=implementation_bwd)
 
 
 class AdditiveBlockFunction(torch.autograd.Function):
