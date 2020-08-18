@@ -60,9 +60,13 @@ class AdditiveCoupling(nn.Module):
         elif self.implementation_fwd == -1:
             x1, x2 = torch.chunk(x, 2, dim=self.split_dim)
             x1, x2 = x1.contiguous(), x2.contiguous()
-            fmd = self.Fm.forward(x2, edge_index, edge_attr)
+
+            edge_attr1, edge_attr2 = torch.chunk(edge_attr, 2, dim=self.split_dim)
+            edge_attr1, edge_attr2 = edge_attr1.contiguous(), edge_attr2.contiguous()
+
+            fmd = self.Fm.forward(x2, edge_index, edge_attr2)
             y1 = x1 + fmd
-            gmd = self.Gm.forward(y1, edge_index, edge_attr)
+            gmd = self.Gm.forward(y1, edge_index, edge_attr1)
             y2 = x2 + gmd
             out = torch.cat([y1, y2], dim=self.split_dim)
         else:
@@ -80,9 +84,13 @@ class AdditiveCoupling(nn.Module):
         elif self.implementation_bwd == -1:
             y1, y2 = torch.chunk(y, 2, dim=self.split_dim)
             y1, y2 = y1.contiguous(), y2.contiguous()
-            gmd = self.Gm.forward(y1, edge_index, edge_attr)
+
+            edge_attr1, edge_attr2 = torch.chunk(edge_attr, 2, dim=self.split_dim)
+            edge_attr1, edge_attr2 = edge_attr1.contiguous(), edge_attr2.contiguous()
+
+            gmd = self.Gm.forward(y1, edge_index, edge_attr2)
             x2 = y2 - gmd
-            fmd = self.Fm.forward(x2, edge_index, edge_attr)
+            fmd = self.Fm.forward(x2, edge_index, edge_attr2)
             x1 = y1 - fmd
             x = torch.cat([x1, x2], dim=self.split_dim)
         else:
