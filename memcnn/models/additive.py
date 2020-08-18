@@ -88,7 +88,7 @@ class AdditiveCoupling(nn.Module):
             edge_attr1, edge_attr2 = torch.chunk(edge_attr, 2, dim=self.split_dim)
             edge_attr1, edge_attr2 = edge_attr1.contiguous(), edge_attr2.contiguous()
 
-            gmd = self.Gm.forward(y1, edge_index, edge_attr2)
+            gmd = self.Gm.forward(y1, edge_index, edge_attr1)
             x2 = y2 - gmd
             fmd = self.Fm.forward(x2, edge_index, edge_attr2)
             x1 = y1 - fmd
@@ -101,7 +101,7 @@ class AdditiveCoupling(nn.Module):
 
 class AdditiveBlockFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, xin, Fm, Gm, *weights):
+    def forward(ctx, xin, edge_index, edge_attr, Fm, Gm, *weights):
         """Forward pass computes:
         {x1, x2} = x
         y1 = x1 + Fm(x2)
@@ -140,19 +140,22 @@ class AdditiveBlockFunction(torch.autograd.Function):
             x1, x2 = torch.chunk(x, 2, dim=1)
             x1, x2 = x1.contiguous(), x2.contiguous()
 
+            edge_attr1, edge_attr2 = torch.chunk(edge_attr, 2, dim=1)
+            edge_attr1, edge_attr2 = edge_attr1.contiguous(), edge_attr2.contiguous()
+
             # compute outputs
-            fmr = Fm.forward(x2)
+            fmr = Fm.forward(x2, edge_index, edge_attr2)
 
             y1 = x1 + fmr
             x1.set_()
             del x1
-            gmr = Gm.forward(y1)
+            gmr = Gm.forward(y1, edge_index, edge_attr1)
             y2 = x2 + gmr
             x2.set_()
             del x2
             output = torch.cat([y1, y2], dim=1)
 
-        ctx.save_for_backward(xin, output)
+        ctx.save_for_backward(xin, edge_index, edge_attr, output)
 
         return output
 
@@ -162,9 +165,13 @@ class AdditiveBlockFunction(torch.autograd.Function):
         Fm, Gm = ctx.Fm, ctx.Gm
 
         # retrieve input and output references
-        xin, output = ctx.saved_tensors
+        xin, edge_index, edge_attr, output = ctx.saved_tensors
         x = xin.detach()
         x1, x2 = torch.chunk(x, 2, dim=1)
+
+        edge_attr = edge_attr.detach()
+        edge_attr1, edge_attr2 = torch.chunk(edge_attr, 2, dim=1)
+
         GWeights = [p for p in Gm.parameters()]
         # partition output gradient also on channels
         assert grad_output.shape[1] % 2 == 0  # nosec
@@ -174,8 +181,8 @@ class AdditiveBlockFunction(torch.autograd.Function):
             x1.requires_grad_()
             x2.requires_grad_()
 
-            y1 = x1 + Fm.forward(x2)
-            y2 = x2 + Gm.forward(y1)
+            y1 = x1 + Fm.forward(x2,edge_index, edge_attr2)
+            y2 = x2 + Gm.forward(y1,edge_index, edge_attr1)
             y = torch.cat([y1, y2], dim=1)
 
             # perform full backward pass on graph...
